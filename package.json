@@ -1,0 +1,35 @@
+{
+  "name": "lybrarian",
+  "version": "0.1.0",
+  "description": "AI-powered lyric writing assistant with prosodic analysis and semantic search",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "netlify dev",
+    "build": "cd frontend && npm run build",
+    "preview": "cd frontend && npm run preview",
+    "lint": "cd frontend && npm run lint",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [
+    "lyrics",
+    "ai",
+    "songwriting",
+    "prosody",
+    "claude",
+    "pwa"
+  ],
+  "author": "",
+  "license": "UNLICENSED",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/ChurchOfKineticRitual/Lybrarian.git"
+  },
+  "devDependencies": {
+    "netlify-cli": "^17.0.0"
+  },
+  "engines": {
+    "node": ">=20.0.0",
+    "npm": ">=9.0.0"
+  }
+}

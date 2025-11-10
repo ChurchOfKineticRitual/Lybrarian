@@ -1,0 +1,98 @@
+# Netlify Configuration for Lybrarian
+# Mobile-first PWA for AI-assisted lyric writing
+
+[build]
+  # Build command for the frontend
+  command = "cd frontend && npm run build"
+
+  # Output directory (Vite builds to dist/)
+  publish = "frontend/dist"
+
+  # Functions directory (serverless API endpoints)
+  functions = "netlify/functions"
+
+[build.environment]
+  # Node.js version - 20.x for latest features and performance
+  NODE_VERSION = "20"
+
+  # AWS Lambda runtime for Netlify Functions
+  AWS_LAMBDA_JS_RUNTIME = "nodejs20.x"
+
+# Redirect all requests to index.html for client-side routing
+[[redirects]]
+  from = "/*"
+  to = "/index.html"
+  status = 200
+
+  # Don't redirect API calls to functions
+  conditions = {Role = [""], Country = []}
+  force = false
+
+# API endpoint redirects (optional, for cleaner URLs)
+[[redirects]]
+  from = "/api/*"
+  to = "/.netlify/functions/:splat"
+  status = 200
+
+# Headers for security and performance
+[[headers]]
+  for = "/*"
+  [headers.values]
+    # Security headers
+    X-Frame-Options = "DENY"
+    X-Content-Type-Options = "nosniff"
+    X-XSS-Protection = "1; mode=block"
+    Referrer-Policy = "strict-origin-when-cross-origin"
+
+    # Cache static assets (images, fonts, etc.)
+    Cache-Control = "public, max-age=31536000, immutable"
+
+# Separate caching for HTML (shorter cache)
+[[headers]]
+  for = "/*.html"
+  [headers.values]
+    Cache-Control = "public, max-age=0, must-revalidate"
+
+# PWA service worker caching
+[[headers]]
+  for = "/sw.js"
+  [headers.values]
+    Cache-Control = "public, max-age=0, must-revalidate"
+
+# Development settings
+[dev]
+  # Port for Netlify Dev (local development)
+  port = 8888
+
+  # Auto-open browser
+  autoLaunch = true
+
+  # Framework detection (Vite)
+  framework = "#custom"
+
+  # Command to run during Netlify Dev
+  command = "cd frontend && npm run dev"
+
+  # Target port for the dev server
+  targetPort = 5173
+
+# Function settings
+[functions]
+  # Directory for functions
+  directory = "netlify/functions"
+
+  # Use ES Modules (modern JavaScript import/export)
+  node_bundler = "esbuild"
+
+  # Include these in the function bundle
+  included_files = ["docs/fragment-corpus-cleaned.csv"]
+
+# Environment variable scopes (set in Netlify UI)
+# These must be configured in the Netlify dashboard:
+# - ANTHROPIC_API_KEY (Functions)
+# - OPENAI_API_KEY (Functions)
+# - DATABASE_URL (Functions)
+# - UPSTASH_VECTOR_URL (Functions)
+# - UPSTASH_VECTOR_TOKEN (Functions)
+# - GITHUB_TOKEN (Functions)
+# - GITHUB_REPO (Functions)
