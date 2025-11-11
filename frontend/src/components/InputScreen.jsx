@@ -2,12 +2,6 @@ import React, { useState } from 'react';
 
 function InputScreen() {
   const [input, setInput] = useState('');
-  const [settings, setSettings] = useState({
-    religiosity: 'ish',
-    rhythm: 'yes',
-    rhyming: 'ish',
-    meaning: 'yes'
-  });
 
   return (
     <div className="max-w-2xl mx-auto p-4">
