@@ -28,8 +28,10 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## Key Concepts
 
 ### Fragment Types
-- **Rhythmic (Y):** Requires prosodic analysis (syllables, stress pattern, rhyme phonetics)
-- **Semantic (N):** Meaning-only, no prosody analysis needed
+- **Rhythmic (Y):** Requires full prosodic analysis (syllables, stress pattern, rhyme phonetics)
+- **Arythmic (N):** Requires basic rhyme analysis only (syllables, rhyme phonetics, no stress pattern)
+
+Note: ALL fragments are semantic (have meaning) and get semantic embeddings. The distinction is prosodic analysis depth.
 
 ### Four-Way Toggle Settings
 1. **Religiosity** (fragment adherence): No / Ish / Yes
@@ -40,10 +42,12 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 Defaults: Ish, Yes, Ish, Yes
 
 ### Prosodic Analysis
-For rhythmic fragments, each line gets:
+**All fragments get basic rhyme analysis:**
 - Syllable count
+- US and British end rhyme sounds (IPA phonetic)
+
+**Rhythmic fragments additionally get:**
 - Stress pattern (binary string: "10101010")
-- End rhyme sound (IPA phonetic)
 
 Uses: CMUdict (NLTK), syllables library, pronouncing library
 
@@ -68,6 +72,14 @@ psql $DATABASE_URL < database-schema.sql
 python scripts/import_fragments.py --generate-tags fragment-corpus-cleaned.csv
 # Phase 2: Complete import 
 python scripts/import_fragments.py --complete-import fragment-corpus-cleaned.csv
+
+# Enhanced rhyme analysis (✅ COMPLETED)
+# Dual pronunciation migration
+psql $DATABASE_URL < database-migration-dual-pronunciation.sql
+# Re-analyze all fragments
+python scripts/import_fragments.py --reanalyze  
+# Fix any failed rhymes with LLM fallback
+python scripts/import_fragments.py --fix-rhymes
 ```
 
 ### Environment Variables
@@ -174,7 +186,9 @@ When implementing, create these in `netlify/functions/`:
 ## Critical Implementation Details
 
 ### Prosodic Analysis Pipeline
-- Only analyze rhythmic=Y fragments
+- Analyze ALL fragments for basic rhyme matching
+- Rhythmic=Y fragments get full prosodic analysis (stress patterns)
+- Arythmic=N fragments get basic analysis (syllables + rhyme sounds only)
 - Use CMUdict for stress patterns and phonetics
 - Handle multi-line fragments line-by-line
 - Store per-line data in `fragment_lines` table
@@ -208,12 +222,12 @@ When implementing, create these in `netlify/functions/`:
 
 ## Development Phases
 
-**Phase 1** (Weeks 1-4): Infrastructure + fragment import (65 fragments)
-**Phase 2** (Weeks 5-8): Core generation (input UI + API + review UI)
-**Phase 3** (Weeks 9-10): Iteration system (ratings + feedback loop)
-**Phase 4** (Weeks 11-12): Workspace (keeper management + export)
-**Phase 5** (Weeks 13-14): Mobile polish (PWA features + performance)
-**Phase 6** (Weeks 15-16): Testing + deployment
+**✅ Phase 1** (Complete): Infrastructure + fragment import + enhanced rhyme analysis
+**Phase 2** (Next): Core generation (input UI + API + review UI)  
+**Phase 3** (Future): Iteration system (ratings + feedback loop)
+**Phase 4** (Future): Workspace (keeper management + export)
+**Phase 5** (Future): Mobile polish (PWA features + performance)
+**Phase 6** (Future): Testing + deployment
 
 ## Project Structure (To Be Created)
 
@@ -257,7 +271,7 @@ All specifications are in the repository root:
 
 ## Common Pitfalls
 
-1. Don't analyze prosody for semantic-only fragments (rhythmic=N)
+1. Don't skip rhyme analysis for arythmic fragments (rhythmic=N) - they still need basic rhyme data
 2. Don't expose API keys - use environment variables only
 3. Don't use "Fine" ratings for iteration feedback (no signal)
 4. Don't validate too strictly for "Ish" settings - allow flexibility

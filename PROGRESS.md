@@ -99,6 +99,41 @@
    - [x] Verify vector search works - semantic embeddings operational
    - [x] Check markdown files in vault - `lyrics-vault/fragments/` created
 
+## ✅ Completed (Phase 1c: Enhanced Rhyme Analysis) 
+
+### Database Migration & Dual Pronunciation ✅ COMPLETED
+1. **Added dual US/British pronunciation support** ✅
+   - [x] Created `database-migration-dual-pronunciation.sql`
+   - [x] Added `end_rhyme_us` and `end_rhyme_gb` columns
+   - [x] Migrated existing data to new columns
+   - [x] Added database indexes for performance
+
+2. **Terminology & Documentation Updates** ✅ COMPLETED
+   - [x] Changed "Semantic (N)" → "Arythmic (N)" throughout codebase
+   - [x] Clarified that ALL fragments are semantic (have meaning)
+   - [x] Updated CLAUDE.md and PROJECT-SUMMARY.md with correct terminology
+   - [x] Fixed confusing binary between "rhythmic vs semantic"
+
+3. **Enhanced Import Logic** ✅ COMPLETED
+   - [x] ALL 65 fragments now get prosodic analysis (not just 34 rhythmic)
+   - [x] Rhythmic fragments: Full analysis (syllables + stress + rhymes)
+   - [x] Arythmic fragments: Basic analysis (syllables + rhymes, NULL stress)
+   - [x] Fixed database save logic to handle both fragment types
+
+4. **LLM Fallback for Failed Rhymes** ✅ COMPLETED
+   - [x] Added word cleaning for contractions ("don't," → "dont")
+   - [x] Added acronym handling ("DMs" → "deems")
+   - [x] Implemented LLM fallback using Claude for failed phonetic analysis
+   - [x] Created `--fix-rhymes` command to repair NULL rhyme entries
+   - [x] Achieved 100% rhyme coverage (98/98 lines have rhyme data)
+
+### Final Results ✅ PERFECT
+- **100% fragment coverage**: 65/65 fragments processed
+- **100% rhyme coverage**: 98/98 lines have US & British rhyme data
+- **0 failures**: LLM fallback rescued all 6 previously failed cases
+- **Dual pronunciation**: Proper US vs British phonetic differences
+- **Consistent processing**: Rhythmic + arythmic fragments both ready for generation
+
 ---
 
 ## 📋 Phase 2 - Core Generation (After Import)
@@ -197,9 +232,11 @@ GITHUB_REPO=username/lyrics-vault
 
 ## 🚀 Current State
 
-**Status:** Foundation complete, ready for Phase 1b
-**Blockers:** None - infrastructure is set up
-**Next Session:** Start with fragment import script or frontend toggles (your choice)
+**Status:** Phase 1 Complete - Perfect Fragment Import & Analysis System ✅
+**Infrastructure:** All services connected and operational ✅
+**Fragment Data:** 65 fragments + 98 lines with 100% rhyme coverage ✅
+**Blockers:** None - ready for Phase 2 (Generation API)
+**Next Session:** Build generation pipeline (`netlify/functions/generate.js`)
 
 ---
 

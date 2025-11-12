@@ -43,8 +43,10 @@ A mobile-first web app that helps a songwriter (Jordan) generate new verses usin
 **What:** Short lyric snippets (1-8 lines) that form the raw material
 
 **Two Types:**
-- **Rhythmic (Y):** Prosody matters - syllable count, stress pattern, rhyme
-- **Semantic (N):** Only meaning matters - used for imagery and themes
+- **Rhythmic (Y):** Requires full prosodic analysis - syllable count, stress pattern, rhyme
+- **Arythmic (N):** Requires basic rhyme analysis only - syllable count and rhyme, no stress pattern
+
+Note: ALL fragments are semantic (have meaning and get embeddings). The distinction is prosodic analysis depth.
 
 **Example Rhythmic:**
 ```
@@ -52,10 +54,10 @@ Walking through the midnight rain    (8 syllables, stress: 10101010)
 Streetlights flicker, go insane      (8 syllables, rhymes with "rain")
 ```
 
-**Example Semantic:**
+**Example Arythmic:**
 ```
 Count back from a hundred in sevens
-(Medical/anxiety imagery, prosody irrelevant)
+(Medical/anxiety imagery, basic rhyme analysis only)
 ```
 
 ### 2. Prosodic Analysis
@@ -287,7 +289,7 @@ lyric-assistant/
 **What Makes This Special:**
 
 1. **Prosodic Matching:** Not just semantic similarity - matches actual rhythm for melodies
-2. **Dual-Type Fragments:** Rhythmic fragments for prosody, semantic fragments for imagery
+2. **Dual-Type Fragments:** Rhythmic fragments for full prosody, arythmic fragments for imagery (both get basic rhyme analysis)
 3. **Iterative Learning:** Gets better with user feedback in real-time
 4. **Mobile-First:** Songwriter can work anywhere, anytime
 5. **Portable Data:** Markdown vault editable in Obsidian, version-controllable
@@ -300,7 +302,7 @@ lyric-assistant/
 A: Vector search finds semantically similar fragments. SQL finds prosodically compatible fragments. Both are needed.
 
 **Q: Why separate Rhythmic=Y/N fragments?**
-A: Analyzing prosody of semantic-only fragments creates noise. "Count back from a hundred in sevens" has no meaningful rhythm - it's valuable for medical/anxiety imagery only.
+A: Full prosodic analysis of arythmic fragments creates noise. "Count back from a hundred in sevens" has no meaningful stress pattern - but it still needs basic rhyme analysis for potential matching and is valuable for medical/anxiety imagery.
 
 **Q: Why iteration instead of just generating once?**
 A: Creative writing is iterative. First pass gives direction, feedback refines. Like human collaboration.

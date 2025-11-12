@@ -256,13 +256,86 @@ def get_stress_pattern(text: str) -> str:
     return pattern if pattern else "1"
 
 
+def _clean_word_for_phonetics(word: str) -> str:
+    """Clean a word for phonetic analysis, handling contractions and acronyms."""
+    word = word.lower().strip()
+    
+    # Handle common contractions
+    contractions = {
+        "don't": "dont",
+        "won't": "wont", 
+        "can't": "cant",
+        "isn't": "isnt",
+        "aren't": "arent",
+        "wasn't": "wasnt",
+        "weren't": "werent",
+        "haven't": "havent",
+        "hasn't": "hasnt",
+        "hadn't": "hadnt",
+        "wouldn't": "wouldnt",
+        "couldn't": "couldnt",
+        "shouldn't": "shouldnt",
+        "mustn't": "mustnt",
+        "it's": "its",
+        "that's": "thats",
+        "there's": "theres",
+        "here's": "heres",
+        "what's": "whats",
+        "where's": "wheres",
+        "who's": "whos",
+        "i'm": "im",
+        "you're": "youre",
+        "we're": "were",
+        "they're": "theyre",
+        "i've": "ive",
+        "you've": "youve",
+        "we've": "weve",
+        "they've": "theyve",
+        "i'll": "ill",
+        "you'll": "youll",
+        "we'll": "well",
+        "they'll": "theyll",
+        "i'd": "id",
+        "you'd": "youd",
+        "we'd": "wed",
+        "they'd": "theyd"
+    }
+    
+    # Handle common acronyms (expand to pronounceable form)
+    acronyms = {
+        "dms": "deems",  # Direct Messages -> "dee-ems" -> simplified
+        "dm": "deem",
+        "ai": "ayeye",
+        "ui": "youeye",
+        "api": "aypeeye",
+        "url": "youarrell",
+        "pdf": "peedeeff",
+        "html": "ayteeemell",
+        "css": "seeessess",
+        "js": "jayess",
+        "sql": "sequel"
+    }
+    
+    # First try contraction mapping
+    if word in contractions:
+        return contractions[word]
+    
+    # Then try acronym mapping
+    if word in acronyms:
+        return acronyms[word]
+    
+    # Finally, just remove punctuation but preserve letters
+    return ''.join(c for c in word if c.isalpha())
+
+
 def get_dual_rhyme_sounds(text: str) -> Dict[str, Optional[str]]:
     """Get both American and British phonetic rhyme sounds."""
     words = text.lower().split()
     if not words:
         return {"us": None, "gb": None}
     
-    last_word = ''.join(c for c in words[-1] if c.isalpha())
+    # Clean the last word for better phonetic analysis
+    last_word = _clean_word_for_phonetics(words[-1])
     
     # Initialize results
     us_rhyme = None
@@ -292,6 +365,80 @@ def get_dual_rhyme_sounds(text: str) -> Dict[str, Optional[str]]:
             gb_rhyme = _convert_american_to_british_phonemes(us_rhyme)
     
     return {"us": us_rhyme, "gb": gb_rhyme}
+
+
+async def get_llm_rhyme_fallback(word: str, openrouter_client) -> Optional[str]:
+    """Use LLM to find rhyming words for failed phonetic analysis."""
+    prompt = f"""Find a simple, common English word that rhymes perfectly with "{word}".
+
+Requirements:
+- Must rhyme exactly (same ending sound)
+- Must be a common word found in standard dictionaries
+- Prefer single-syllable words when possible
+- If original word is compound/complex, find simpler rhyming word
+
+Examples:
+- "whetter" → "better" 
+- "fearfully" → "cheerfully" or just "fully"
+- "responsively" → "actively" or just "lee" 
+- "impermanent" → "permanent" or just "tent"
+
+Word: "{word}"
+Rhyming word:"""
+
+    try:
+        response = await openrouter_client.chat.completions.create(
+            model="anthropic/claude-sonnet-4.5",
+            messages=[{"role": "user", "content": prompt}],
+            max_tokens=20,
+            temperature=0.1
+        )
+        
+        # Extract and clean the response
+        rhyme_word = response.choices[0].message.content.strip().lower()
+        
+        # Remove any quotes or extra text
+        rhyme_word = rhyme_word.replace('"', '').replace("'", '').split()[0]
+        
+        # Basic validation - must be letters only and reasonable length
+        if rhyme_word.isalpha() and 2 <= len(rhyme_word) <= 15:
+            return rhyme_word
+            
+        logger.warning(f"LLM returned invalid rhyme word '{rhyme_word}' for '{word}'")
+        return None
+        
+    except Exception as e:
+        logger.error(f"LLM rhyme fallback failed for '{word}': {e}")
+        return None
+
+
+async def get_dual_rhyme_sounds_with_fallback(text: str, openrouter_client=None) -> Dict[str, Optional[str]]:
+    """Get rhyme sounds with LLM fallback for failed cases."""
+    
+    # First, try the standard phonetic analysis
+    rhymes = get_dual_rhyme_sounds(text)
+    
+    # If both rhymes failed and we have an LLM client, try fallback
+    if (not rhymes["us"] and not rhymes["gb"] and openrouter_client):
+        words = text.lower().split()
+        if words:
+            original_word = _clean_word_for_phonetics(words[-1])
+            logger.info(f"    LLM fallback for failed word: '{original_word}'")
+            
+            # Get LLM suggestion for rhyming word
+            rhyme_word = await get_llm_rhyme_fallback(original_word, openrouter_client)
+            
+            if rhyme_word:
+                # Try to get phonetics for the LLM-suggested word
+                fallback_rhymes = get_dual_rhyme_sounds(rhyme_word)
+                
+                if fallback_rhymes["us"] or fallback_rhymes["gb"]:
+                    logger.info(f"    LLM suggested '{rhyme_word}' → US:{fallback_rhymes['us']}, GB:{fallback_rhymes['gb']}")
+                    return fallback_rhymes
+                else:
+                    logger.warning(f"    LLM suggested word '{rhyme_word}' also failed phonetic analysis")
+    
+    return rhymes
 
 
 def get_end_rhyme_sound(text: str, use_british: bool = True) -> Optional[str]:
@@ -331,10 +478,26 @@ def _convert_american_to_british_phonemes(american_phones: str) -> str:
 
 
 def analyze_line_prosody(line_text: str) -> Dict:
-    """Analyze syllables, stress, and rhyme for a single line."""
+    """Analyze syllables, stress, and rhyme for a single line (sync version)."""
     
     # Get dual pronunciations
     dual_rhymes = get_dual_rhyme_sounds(line_text)
+    
+    return {
+        'text': line_text,
+        'syllables': count_syllables(line_text),
+        'stress': get_stress_pattern(line_text),
+        'end_rhyme': dual_rhymes["gb"],  # Keep legacy field for backward compatibility
+        'end_rhyme_us': dual_rhymes["us"], 
+        'end_rhyme_gb': dual_rhymes["gb"]
+    }
+
+
+async def analyze_line_prosody_with_fallback(line_text: str, openrouter_client=None) -> Dict:
+    """Analyze syllables, stress, and rhyme for a single line with LLM fallback."""
+    
+    # Get dual pronunciations with LLM fallback
+    dual_rhymes = await get_dual_rhyme_sounds_with_fallback(line_text, openrouter_client)
     
     return {
         'text': line_text,
@@ -473,9 +636,12 @@ async def save_to_database(fragment_data: Dict, db_conn):
             f"fragments/{fragment_data['id']}.md"
         )
 
-        # If rhythmic, insert prosody data
-        if fragment_data['rhythmic'] and 'prosody_data' in fragment_data:
+        # Insert prosody data for ALL fragments (rhythmic get stress patterns, arythmic get NULL stress)
+        if 'prosody_data' in fragment_data:
             for line_data in fragment_data['prosody_data']['prosody']:
+                # For arythmic fragments, set stress_pattern to NULL
+                stress_pattern = line_data['stress'] if fragment_data['rhythmic'] else None
+                
                 await db_conn.execute("""
                     INSERT INTO fragment_lines (
                         fragment_id, line_number, text, syllables,
@@ -486,8 +652,8 @@ async def save_to_database(fragment_data: Dict, db_conn):
                     line_data['line'],
                     line_data['text'],
                     line_data['syllables'],
-                    line_data['stress'],
-                    line_data['end_rhyme'],      # Legacy field
+                    stress_pattern,              # NULL for arythmic fragments
+                    line_data['end_rhyme'],      # Legacy field (British rhyme)
                     line_data['end_rhyme_us'],   # American pronunciation
                     line_data['end_rhyme_gb']    # British pronunciation
                 )
@@ -516,8 +682,8 @@ async def save_to_vector_store(fragment_data: Dict, vector_index) -> str:
             'rhythmic': fragment_data['rhythmic']
         }
 
-        # If rhythmic, add prosody summary
-        if fragment_data['rhythmic'] and 'prosody_data' in fragment_data:
+        # Add prosody summary for all fragments (all have basic syllable analysis now)
+        if 'prosody_data' in fragment_data:
             syllables = [line['syllables'] for line in fragment_data['prosody_data']['prosody']]
             metadata['avg_syllables'] = round(sum(syllables) / len(syllables), 1)
 
@@ -667,12 +833,14 @@ async def complete_import_phase(
                 # Display reviewed tags
                 logger.info(f"  Tags: {', '.join(fragment['tags'])}")
 
-                # Analyze prosody if rhythmic
+                # Analyze prosody for ALL fragments (basic rhyme analysis)
+                logger.info(f"  → Analyzing prosody...")
+                prosody_data = analyze_fragment_prosody(fragment['text'])
+                fragment['prosody_data'] = prosody_data
                 if fragment['rhythmic']:
-                    logger.info(f"  → Analyzing prosody...")
-                    prosody_data = analyze_fragment_prosody(fragment['text'])
-                    fragment['prosody_data'] = prosody_data
-                    logger.info(f"    Type: {prosody_data['fragment_type']}, Lines: {prosody_data['lines']}")
+                    logger.info(f"    Rhythmic: Type: {prosody_data['fragment_type']}, Lines: {prosody_data['lines']}")
+                else:
+                    logger.info(f"    Arythmic: Lines: {prosody_data['lines']} (basic rhyme analysis)")
 
                 # Generate embedding
                 logger.info(f"  → Generating embedding...")
@@ -727,6 +895,253 @@ async def complete_import_phase(
 
 
 # ============================================
+# PHASE 3: RE-ANALYZE EXISTING FRAGMENTS
+# ============================================
+
+async def reanalyze_prosody_phase():
+    """Phase 3: Re-analyze existing fragments with dual pronunciation."""
+    import asyncpg
+    
+    # Validate configuration
+    Config.validate('complete')
+    
+    # Connect to database
+    logger.info("Connecting to database...")
+    db_conn = await asyncpg.connect(Config.DATABASE_URL)
+    
+    try:
+        # Get all fragments with their lines
+        logger.info("Fetching all fragments...")
+        query = """
+        SELECT f.id, f.content, f.rhythmic, fl.line_number, fl.text, fl.fragment_id
+        FROM fragments f
+        JOIN fragment_lines fl ON f.id = fl.fragment_id
+        ORDER BY f.id, fl.line_number
+        """
+        
+        rows = await db_conn.fetch(query)
+        logger.info(f"Found {len(rows)} lines across all fragments")
+        
+        # Group by fragment
+        fragments = {}
+        for row in rows:
+            frag_id = row['id']
+            if frag_id not in fragments:
+                fragments[frag_id] = {
+                    'content': row['content'],
+                    'rhythmic': row['rhythmic'],
+                    'lines': []
+                }
+            fragments[frag_id]['lines'].append({
+                'line_number': row['line_number'],
+                'text': row['text']
+            })
+        
+        logger.info(f"Processing {len(fragments)} fragments (rhythmic + arythmic)...")
+        
+        # Re-analyze each fragment
+        success_count = 0
+        fail_count = 0
+        
+        for i, (frag_id, frag_data) in enumerate(fragments.items(), 1):
+            frag_type = "Rhythmic" if frag_data['rhythmic'] else "Arythmic"
+            logger.info(f"[{i}/{len(fragments)}] Re-analyzing {frag_id} ({frag_type})...")
+            
+            try:
+                for line_data in frag_data['lines']:
+                    line_text = line_data['text']
+                    line_number = line_data['line_number']
+                    
+                    # Re-analyze prosody with dual pronunciation
+                    prosody = analyze_line_prosody(line_text)
+                    
+                    # For arythmic fragments, set stress_pattern to NULL
+                    stress_pattern = prosody['stress'] if frag_data['rhythmic'] else None
+                    
+                    # Update database with new data
+                    await db_conn.execute("""
+                        UPDATE fragment_lines 
+                        SET 
+                            syllables = $1,
+                            stress_pattern = $2,
+                            end_rhyme_sound = $3,
+                            end_rhyme_us = $4,
+                            end_rhyme_gb = $5
+                        WHERE fragment_id = $6 AND line_number = $7
+                    """,
+                        prosody['syllables'],
+                        stress_pattern,            # NULL for arythmic fragments
+                        prosody['end_rhyme'],      # Legacy field (British)
+                        prosody['end_rhyme_us'],   # American pronunciation
+                        prosody['end_rhyme_gb'],   # British pronunciation
+                        frag_id,
+                        line_number
+                    )
+                    
+                    stress_info = f", stress={stress_pattern}" if stress_pattern else ""
+                    logger.info(f"  Line {line_number}: {prosody['syllables']} syllables{stress_info}, US={prosody['end_rhyme_us']}, GB={prosody['end_rhyme_gb']}")
+                
+                success_count += 1
+                
+            except Exception as e:
+                logger.error(f"  ✗ Failed: {e}")
+                fail_count += 1
+            
+            # Small delay to avoid overwhelming the libraries
+            await asyncio.sleep(0.1)
+        
+        # Show sample results
+        logger.info("\n" + "="*60)
+        logger.info("RE-ANALYSIS COMPLETE")
+        logger.info("="*60)
+        logger.info(f"✓ Successful: {success_count}")
+        logger.info(f"✗ Failed: {fail_count}")
+        
+        # Show sample of updated data
+        logger.info("\nSample results:")
+        sample_query = """
+        SELECT f.rhythmic, fl.fragment_id, fl.line_number, fl.text, fl.syllables, 
+               fl.stress_pattern, fl.end_rhyme_us, fl.end_rhyme_gb
+        FROM fragment_lines fl
+        JOIN fragments f ON fl.fragment_id = f.id
+        ORDER BY f.rhythmic DESC, fl.fragment_id, fl.line_number
+        LIMIT 10
+        """
+        
+        sample_rows = await db_conn.fetch(sample_query)
+        for row in sample_rows:
+            frag_type = "R" if row['rhythmic'] else "A"
+            stress_info = f" | stress={row['stress_pattern']}" if row['stress_pattern'] else ""
+            logger.info(f"  {row['fragment_id']} ({frag_type}) L{row['line_number']}: US={row['end_rhyme_us']} | GB={row['end_rhyme_gb']}{stress_info}")
+        
+        if fail_count == 0:
+            logger.info("\n🎉 All fragments re-analyzed successfully!")
+        else:
+            logger.warning(f"\n⚠️  {fail_count} fragments failed. Check logs above.")
+        
+    finally:
+        await db_conn.close()
+        logger.info("\nDatabase connection closed.")
+
+
+# ============================================
+# PHASE 3B: FIX FAILED RHYMES WITH LLM FALLBACK
+# ============================================
+
+async def fix_failed_rhymes_phase():
+    """Fix lines with NULL rhymes using LLM fallback."""
+    import asyncpg
+    
+    # Validate configuration
+    Config.validate('complete')
+    
+    # Connect to database
+    logger.info("Connecting to database...")
+    db_conn = await asyncpg.connect(Config.DATABASE_URL)
+    
+    # Initialize OpenRouter client for LLM fallback
+    logger.info("Initializing OpenRouter client for LLM fallback...")
+    openrouter_client = AsyncOpenAI(
+        base_url="https://openrouter.ai/api/v1",
+        api_key=Config.OPENROUTER_API_KEY
+    )
+    
+    try:
+        # Find lines with failed rhyme analysis
+        logger.info("Finding lines with NULL rhymes...")
+        query = """
+        SELECT fl.fragment_id, fl.line_number, fl.text
+        FROM fragment_lines fl
+        WHERE fl.end_rhyme_us IS NULL OR fl.end_rhyme_gb IS NULL
+        ORDER BY fl.fragment_id, fl.line_number
+        """
+        
+        failed_rows = await db_conn.fetch(query)
+        logger.info(f"Found {len(failed_rows)} lines with failed rhyme analysis")
+        
+        if not failed_rows:
+            logger.info("🎉 No failed rhymes to fix!")
+            return
+        
+        success_count = 0
+        fail_count = 0
+        
+        for i, row in enumerate(failed_rows, 1):
+            frag_id = row['fragment_id']
+            line_number = row['line_number']
+            line_text = row['text']
+            
+            logger.info(f"[{i}/{len(failed_rows)}] Fixing {frag_id} L{line_number}: '{line_text[:40]}...'")
+            
+            try:
+                # Use LLM fallback to get rhyme analysis
+                prosody = await analyze_line_prosody_with_fallback(line_text, openrouter_client)
+                
+                if prosody['end_rhyme_us'] or prosody['end_rhyme_gb']:
+                    # Update database with recovered rhyme data
+                    await db_conn.execute("""
+                        UPDATE fragment_lines 
+                        SET 
+                            end_rhyme_sound = $1,
+                            end_rhyme_us = $2,
+                            end_rhyme_gb = $3
+                        WHERE fragment_id = $4 AND line_number = $5
+                    """,
+                        prosody['end_rhyme'],      # Legacy field (British)
+                        prosody['end_rhyme_us'],   # American pronunciation  
+                        prosody['end_rhyme_gb'],   # British pronunciation
+                        frag_id,
+                        line_number
+                    )
+                    
+                    success_count += 1
+                    logger.info(f"  ✓ Fixed: US={prosody['end_rhyme_us']}, GB={prosody['end_rhyme_gb']}")
+                else:
+                    fail_count += 1
+                    logger.warning(f"  ✗ Still failed after LLM fallback")
+                
+            except Exception as e:
+                fail_count += 1
+                logger.error(f"  ✗ Error: {e}")
+            
+            # Rate limiting for LLM calls
+            await asyncio.sleep(0.2)
+        
+        # Summary
+        logger.info("\n" + "="*60)
+        logger.info("RHYME REPAIR COMPLETE")
+        logger.info("="*60)
+        logger.info(f"✓ Fixed: {success_count}")
+        logger.info(f"✗ Still failed: {fail_count}")
+        logger.info(f"Original failures: {len(failed_rows)}")
+        
+        # Show final status
+        final_query = """
+        SELECT 
+            COUNT(*) as total_lines,
+            COUNT(end_rhyme_us) as us_populated, 
+            COUNT(end_rhyme_gb) as gb_populated,
+            COUNT(*) - COUNT(end_rhyme_us) as still_missing
+        FROM fragment_lines
+        """
+        
+        final_stats = await db_conn.fetchrow(final_query)
+        logger.info(f"\nFinal statistics:")
+        logger.info(f"  Total lines: {final_stats['total_lines']}")
+        logger.info(f"  Lines with rhymes: {final_stats['us_populated']}/{final_stats['total_lines']} ({round(100*final_stats['us_populated']/final_stats['total_lines'], 1)}%)")
+        logger.info(f"  Still missing: {final_stats['still_missing']}")
+        
+        if final_stats['still_missing'] == 0:
+            logger.info("\n🎉 All lines now have rhyme data!")
+        else:
+            logger.warning(f"\n⚠️  {final_stats['still_missing']} lines still missing rhyme data")
+        
+    finally:
+        await db_conn.close()
+        logger.info("\nDatabase connection closed.")
+
+
+# ============================================
 # CLI ENTRY POINT
 # ============================================
 
@@ -741,10 +1156,20 @@ def main():
         print("  Phase 2 - Complete import:")
         print("    python import_fragments.py --complete-import <csv_file>")
         print("")
+        print("  Phase 3 - Re-analyze prosody:")
+        print("    python import_fragments.py --reanalyze")
+        print("")
+        print("  Phase 3B - Fix failed rhymes with LLM:")
+        print("    python import_fragments.py --fix-rhymes")
+        print("")
         print("Example workflow:")
         print("  python import_fragments.py --generate-tags fragment-corpus-cleaned.csv")
         print("  # Review and edit tags-review.json")
         print("  python import_fragments.py --complete-import fragment-corpus-cleaned.csv")
+        print("  # After migration:")
+        print("  python import_fragments.py --reanalyze")
+        print("  # Fix any failed rhymes:")
+        print("  python import_fragments.py --fix-rhymes")
         sys.exit(1)
 
     mode = sys.argv[1]
@@ -789,9 +1214,35 @@ def main():
 
         asyncio.run(complete_import_phase(csv_path))
 
+    elif mode == '--reanalyze':
+        if len(sys.argv) != 2:
+            print("Usage: python import_fragments.py --reanalyze")
+            sys.exit(1)
+
+        logger.info("="*60)
+        logger.info("LYBRARIAN FRAGMENT IMPORT - PHASE 3")
+        logger.info("="*60)
+        logger.info("Re-analyzing existing fragments with dual pronunciation")
+        logger.info("="*60 + "\n")
+
+        asyncio.run(reanalyze_prosody_phase())
+
+    elif mode == '--fix-rhymes':
+        if len(sys.argv) != 2:
+            print("Usage: python import_fragments.py --fix-rhymes")
+            sys.exit(1)
+
+        logger.info("="*60)
+        logger.info("LYBRARIAN FRAGMENT IMPORT - PHASE 3B")
+        logger.info("="*60)
+        logger.info("Fixing failed rhymes with LLM fallback")
+        logger.info("="*60 + "\n")
+
+        asyncio.run(fix_failed_rhymes_phase())
+
     else:
         logger.error(f"Unknown mode: {mode}")
-        logger.error("Use --generate-tags or --complete-import")
+        logger.error("Use --generate-tags, --complete-import, --reanalyze, or --fix-rhymes")
         sys.exit(1)
 
 
