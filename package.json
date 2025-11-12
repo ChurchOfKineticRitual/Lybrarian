@@ -1,0 +1,19 @@
+{
+  "name": "lybrarian",
+  "version": "1.0.0",
+  "description": "Lybrarian - AI-assisted lyric writing PWA",
+  "private": true,
+  "scripts": {
+    "install:all": "npm install && cd frontend && npm install"
+  },
+  "dependencies": {
+    "syllable": "^5.0.1",
+    "@upstash/vector": "^1.1.1",
+    "pg": "^8.11.3",
+    "node-fetch": "^2.7.0"
+  },
+  "devDependencies": {},
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}
