@@ -69,41 +69,35 @@
 
 ---
 
-## 🎯 Next Steps - Phase 1b: Infrastructure Setup
+## ✅ Completed (Phase 1b: Infrastructure & Fragment Import) 
 
-### Ready to Run Import (Blocked by Infrastructure)
-The import script is complete and ready to use. Before running it, you need to:
+### Infrastructure Setup ✅ COMPLETED
+1. **Set up infrastructure services** ✅
+   - [x] Get OpenRouter API key at https://openrouter.ai/keys (replaces separate Anthropic/OpenAI keys)
+   - [x] Create Neon database (serverless Postgres) at https://console.neon.tech/
+   - [x] Run `database-schema.sql` to create tables
+   - [x] Create Upstash Vector index (1536 dimensions) at https://console.upstash.com/
+   - [x] Copy `.env.example` to `.env` and fill in API keys
 
-1. **Set up infrastructure services**
-   - [ ] Get OpenRouter API key at https://openrouter.ai/keys (replaces separate Anthropic/OpenAI keys)
-   - [ ] Create Neon database (serverless Postgres) at https://console.neon.tech/
-   - [ ] Run `database-schema.sql` to create tables
-   - [ ] Create Upstash Vector index (1536 dimensions) at https://console.upstash.com/
-   - [ ] Optional: Create GitHub repo for lyrics vault
-   - [ ] Copy `.env.example` to `.env` and fill in API keys
-
-2. **Install Python dependencies**
+2. **Install Python dependencies** ✅
    ```bash
-   cd scripts
-   pip install -r requirements.txt
+   pip install asyncpg upstash-vector syllables pronouncing nltk setuptools
    ```
 
-3. **Run the two-phase import**
+3. **Run the two-phase import** ✅ COMPLETED
    ```bash
-   # Phase 1: Generate tags
-   python import_fragments.py --generate-tags ../fragment-corpus-cleaned.csv
+   # Phase 1: Generate tags ✅
+   python scripts/import_fragments.py --generate-tags fragment-corpus-cleaned.csv
 
-   # Review and edit tags-review.json
-
-   # Phase 2: Complete import
-   python import_fragments.py --complete-import ../fragment-corpus-cleaned.csv
+   # Phase 2: Complete import ✅  
+   python scripts/import_fragments.py --complete-import fragment-corpus-cleaned.csv
    ```
 
-4. **Verify fragment import**
-   - [ ] Confirm all 65 fragments imported
-   - [ ] Test database queries
-   - [ ] Verify vector search works
-   - [ ] Check markdown files in vault
+4. **Verify fragment import** ✅ COMPLETED
+   - [x] Confirm all 65 fragments imported successfully
+   - [x] Test database queries - prosodic analysis working
+   - [x] Verify vector search works - semantic embeddings operational
+   - [x] Check markdown files in vault - `lyrics-vault/fragments/` created
 
 ---
 
@@ -162,14 +156,17 @@ Lybrarian/
 
 ## 🔑 Environment Variables Needed
 
-Add these to Netlify when ready for Phase 1b:
+Environment variables configured ✅:
 
 ```
-ANTHROPIC_API_KEY=sk-ant-...
-OPENAI_API_KEY=sk-...
+# OpenRouter API (unified access) ✅
+OPENROUTER_API_KEY=sk-or-v1-...
+# Neon Database ✅
 DATABASE_URL=postgresql://...
+# Upstash Vector ✅  
 UPSTASH_VECTOR_URL=https://...
 UPSTASH_VECTOR_TOKEN=...
+# GitHub (optional)
 GITHUB_TOKEN=ghp_...
 GITHUB_REPO=username/lyrics-vault
 ```

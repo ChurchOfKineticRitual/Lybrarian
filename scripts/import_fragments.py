@@ -143,7 +143,7 @@ Example output: urban, nocturnal, melancholic, walking, rain"""
 
     try:
         response = await openrouter_client.chat.completions.create(
-            model="anthropic/claude-sonnet-4-5",
+            model="anthropic/claude-sonnet-4.5",
             messages=[{"role": "user", "content": prompt}],
             max_tokens=100,
             temperature=0.3

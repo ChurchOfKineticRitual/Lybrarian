@@ -60,20 +60,25 @@ Uses: CMUdict (NLTK), syllables library, pronouncing library
 # Install dependencies (once frontend/ is created)
 cd frontend && npm install
 
-# Set up database schema
+# Set up database schema (✅ COMPLETED)
 psql $DATABASE_URL < database-schema.sql
 
-# Import initial 65 fragments
-python scripts/import-fragments.py fragment-corpus-cleaned.csv
+# Import initial 65 fragments (✅ COMPLETED)
+# Phase 1: Generate tags
+python scripts/import_fragments.py --generate-tags fragment-corpus-cleaned.csv
+# Phase 2: Complete import 
+python scripts/import_fragments.py --complete-import fragment-corpus-cleaned.csv
 ```
 
 ### Environment Variables
 
-Required in Netlify (or `.env` for local development):
+Required in Netlify (or `.env` for local development) - ✅ CONFIGURED:
 ```
-ANTHROPIC_API_KEY=sk-ant-...
-OPENAI_API_KEY=sk-...
+# OpenRouter API (unified access to Claude + OpenAI) - ✅ SET
+OPENROUTER_API_KEY=sk-or-v1-...
+# Neon Database - ✅ SET
 DATABASE_URL=postgresql://...
+# Upstash Vector - ✅ SET  
 UPSTASH_VECTOR_URL=https://...
 UPSTASH_VECTOR_TOKEN=...
 GITHUB_TOKEN=ghp_...
