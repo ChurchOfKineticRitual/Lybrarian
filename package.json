@@ -1,0 +1,19 @@
+{
+  "name": "lybrarian-backend",
+  "version": "1.0.0",
+  "description": "Lybrarian backend - Netlify serverless functions",
+  "private": true,
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "dependencies": {
+    "pg": "^8.11.3",
+    "@upstash/vector": "^1.1.1",
+    "syllable": "^5.0.1",
+    "cmu-pronouncing-dictionary": "^1.0.0",
+    "node-fetch": "^2.7.0"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}
