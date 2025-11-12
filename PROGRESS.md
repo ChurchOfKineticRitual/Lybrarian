@@ -38,10 +38,13 @@
 
 ### Python Import Script
 - [x] Created `scripts/import_fragments.py` - Complete fragment processing pipeline
+- [x] **Two-phase workflow**: Generate tags → Review → Complete import
+- [x] **Tag review system**: Manual confirmation/deletion/amendment of AI-generated tags
+- [x] **OpenRouter integration**: Unified API for Claude + OpenAI (single key)
 - [x] CSV parsing with proper encoding and multi-line handling
-- [x] Tag generation using Claude Sonnet 4.5 API
+- [x] Tag generation using Claude Sonnet 4.5 (via OpenRouter)
 - [x] Prosodic analysis (syllables, stress patterns, rhyme sounds)
-- [x] Embedding generation using OpenAI text-embedding-3-small
+- [x] Embedding generation using OpenAI text-embedding-3-small (via OpenRouter)
 - [x] Database integration (Neon Postgres)
 - [x] Vector store integration (Upstash Vector)
 - [x] Markdown file generation (Obsidian-compatible)
@@ -49,13 +52,15 @@
 - [x] Rate limiting for API calls
 
 ### Dependencies & Configuration
-- [x] `scripts/requirements.txt` - All Python dependencies listed
-- [x] `.env.example` - Environment variable template
-- [x] `scripts/README.md` - Comprehensive usage documentation
-- [x] Updated `.gitignore` - Exclude `.env`, `lyrics-vault/`, `nltk_data/`
+- [x] `scripts/requirements.txt` - Updated for OpenRouter (removed anthropic package)
+- [x] `.env.example` - Simplified to single OpenRouter key
+- [x] `scripts/README.md` - Comprehensive documentation with two-phase workflow
+- [x] Updated `.gitignore` - Exclude `.env`, `lyrics-vault/`, `nltk_data/`, `tags-review.json`
 
 ### Features Implemented
-- **Tag Generation**: Claude API generates 3-7 semantic tags per fragment
+- **Two-Phase Import**: Separate tag generation and import phases for manual review
+- **Tag Review**: Edit `tags-review.json` before finalizing import
+- **OpenRouter**: Single API key for both Claude (tags) and OpenAI (embeddings)
 - **Prosodic Analysis**: CMUdict-based syllable counting, stress patterns, IPA rhyme sounds
 - **Dual Storage**: Metadata in Postgres + vectors in Upstash
 - **Markdown Vault**: YAML frontmatter with full metadata
@@ -70,6 +75,7 @@
 The import script is complete and ready to use. Before running it, you need to:
 
 1. **Set up infrastructure services**
+   - [ ] Get OpenRouter API key at https://openrouter.ai/keys (replaces separate Anthropic/OpenAI keys)
    - [ ] Create Neon database (serverless Postgres) at https://console.neon.tech/
    - [ ] Run `database-schema.sql` to create tables
    - [ ] Create Upstash Vector index (1536 dimensions) at https://console.upstash.com/
@@ -82,9 +88,15 @@ The import script is complete and ready to use. Before running it, you need to:
    pip install -r requirements.txt
    ```
 
-3. **Run the import**
+3. **Run the two-phase import**
    ```bash
-   python import_fragments.py ../fragment-corpus-cleaned.csv
+   # Phase 1: Generate tags
+   python import_fragments.py --generate-tags ../fragment-corpus-cleaned.csv
+
+   # Review and edit tags-review.json
+
+   # Phase 2: Complete import
+   python import_fragments.py --complete-import ../fragment-corpus-cleaned.csv
    ```
 
 4. **Verify fragment import**

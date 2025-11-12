@@ -3,8 +3,12 @@
 Fragment Import Script for Lybrarian
 Processes fragment CSV and imports to database, vector store, and markdown vault.
 
-Usage:
-    python import_fragments.py fragment-corpus-cleaned.csv
+Two-Phase Workflow:
+    Phase 1 - Generate tags for review:
+        python import_fragments.py --generate-tags fragment-corpus-cleaned.csv
+
+    Phase 2 - Complete import with reviewed tags:
+        python import_fragments.py --complete-import fragment-corpus-cleaned.csv
 
 Requirements:
     - Environment variables set (see .env.example)
@@ -14,6 +18,7 @@ Requirements:
 
 import asyncio
 import csv
+import json
 import logging
 import os
 import sys
@@ -23,7 +28,6 @@ from pathlib import Path
 from typing import Dict, List, Optional
 
 # Third-party imports
-import anthropic
 import asyncpg
 import syllables
 import pronouncing
@@ -62,8 +66,10 @@ except:
 class Config:
     """Configuration from environment variables."""
 
-    ANTHROPIC_API_KEY = os.getenv('ANTHROPIC_API_KEY')
-    OPENAI_API_KEY = os.getenv('OPENAI_API_KEY')
+    # OpenRouter unified API
+    OPENROUTER_API_KEY = os.getenv('OPENROUTER_API_KEY')
+
+    # Database & Vector Store
     DATABASE_URL = os.getenv('DATABASE_URL')
     UPSTASH_VECTOR_URL = os.getenv('UPSTASH_VECTOR_URL')
     UPSTASH_VECTOR_TOKEN = os.getenv('UPSTASH_VECTOR_TOKEN')
@@ -73,15 +79,19 @@ class Config:
     GITHUB_REPO = os.getenv('GITHUB_REPO')
 
     @classmethod
-    def validate(cls):
-        """Validate required environment variables."""
-        required = [
-            'ANTHROPIC_API_KEY',
-            'OPENAI_API_KEY',
-            'DATABASE_URL',
-            'UPSTASH_VECTOR_URL',
-            'UPSTASH_VECTOR_TOKEN'
-        ]
+    def validate(cls, phase: str):
+        """Validate required environment variables for the given phase."""
+        if phase == 'tags':
+            required = ['OPENROUTER_API_KEY']
+        elif phase == 'complete':
+            required = [
+                'OPENROUTER_API_KEY',
+                'DATABASE_URL',
+                'UPSTASH_VECTOR_URL',
+                'UPSTASH_VECTOR_TOKEN'
+            ]
+        else:
+            required = []
 
         missing = [var for var in required if not getattr(cls, var)]
 
@@ -118,11 +128,11 @@ def parse_csv(csv_path: str) -> List[Dict]:
 
 
 # ============================================
-# TAG GENERATION
+# TAG GENERATION (via OpenRouter)
 # ============================================
 
-async def generate_tags(fragment_text: str, context: Optional[str], anthropic_client) -> List[str]:
-    """Generate tags using Claude API."""
+async def generate_tags_openrouter(fragment_text: str, context: Optional[str], openrouter_client) -> List[str]:
+    """Generate tags using Claude via OpenRouter."""
 
     context_line = f'Context: "{context}"' if context else ""
 
@@ -143,16 +153,15 @@ No explanations. No numbering.
 Example output: urban, nocturnal, melancholic, walking, rain"""
 
     try:
-        response = await asyncio.to_thread(
-            anthropic_client.messages.create,
-            model="claude-sonnet-4-5-20250929",
+        response = await openrouter_client.chat.completions.create(
+            model="anthropic/claude-sonnet-4-5",
+            messages=[{"role": "user", "content": prompt}],
             max_tokens=100,
-            temperature=0.3,
-            messages=[{"role": "user", "content": prompt}]
+            temperature=0.3
         )
 
         # Extract text from response
-        tags_str = response.content[0].text.strip()
+        tags_str = response.choices[0].message.content.strip()
 
         # Parse comma-separated tags
         tags = [tag.strip().lower() for tag in tags_str.split(',')]
@@ -290,11 +299,11 @@ def analyze_fragment_prosody(fragment_text: str) -> Dict:
 
 
 # ============================================
-# EMBEDDING GENERATION
+# EMBEDDING GENERATION (via OpenRouter)
 # ============================================
 
-async def generate_embedding(fragment_text: str, context: Optional[str], openai_client) -> List[float]:
-    """Generate semantic embedding for fragment."""
+async def generate_embedding_openrouter(fragment_text: str, context: Optional[str], openrouter_client) -> List[float]:
+    """Generate semantic embedding via OpenRouter."""
 
     # Construct embedding text
     if context:
@@ -303,8 +312,8 @@ async def generate_embedding(fragment_text: str, context: Optional[str], openai_
         embedding_text = fragment_text
 
     try:
-        response = await openai_client.embeddings.create(
-            model="text-embedding-3-small",
+        response = await openrouter_client.embeddings.create(
+            model="openai/text-embedding-3-small",
             input=embedding_text
         )
 
@@ -450,87 +459,99 @@ async def save_to_vector_store(fragment_data: Dict, vector_index: UpstashIndex) 
 
 
 # ============================================
-# MAIN PROCESSING PIPELINE
+# PHASE 1: GENERATE TAGS FOR REVIEW
 # ============================================
 
-async def process_fragment(
-    fragment: Dict,
-    anthropic_client,
-    openai_client,
-    db_conn,
-    vector_index: UpstashIndex,
-    output_dir: Path,
-    index: int,
-    total: int
-) -> bool:
-    """Process a single fragment through the complete pipeline."""
-
-    frag_id = fragment['id']
-    logger.info(f"\n[{index}/{total}] Processing {frag_id}...")
-
-    try:
-        # 1. Generate tags
-        logger.info(f"  → Generating tags...")
-        tags = await generate_tags(
-            fragment['text'],
-            fragment['context'],
-            anthropic_client
-        )
-        fragment['tags'] = tags
-        logger.info(f"    Tags: {', '.join(tags)}")
-
-        # 2. Analyze prosody if rhythmic
-        if fragment['rhythmic']:
-            logger.info(f"  → Analyzing prosody...")
-            prosody_data = analyze_fragment_prosody(fragment['text'])
-            fragment['prosody_data'] = prosody_data
-            logger.info(f"    Type: {prosody_data['fragment_type']}, Lines: {prosody_data['lines']}")
-
-        # 3. Generate embedding
-        logger.info(f"  → Generating embedding...")
-        embedding = await generate_embedding(
-            fragment['text'],
-            fragment['context'],
-            openai_client
-        )
-        fragment['embedding'] = embedding
-        logger.info(f"    Embedding: {len(embedding)} dimensions")
-
-        # 4. Save to vector store
-        logger.info(f"  → Saving to vector store...")
-        embedding_id = await save_to_vector_store(fragment, vector_index)
-        fragment['embedding_id'] = embedding_id
-
-        # 5. Save to database
-        logger.info(f"  → Saving to database...")
-        await save_to_database(fragment, db_conn)
-
-        # 6. Create markdown file
-        logger.info(f"  → Creating markdown file...")
-        file_path = create_fragment_markdown(fragment, output_dir)
-
-        logger.info(f"  ✓ Complete: {file_path.name}")
-        return True
-
-    except Exception as e:
-        logger.error(f"  ✗ Failed to process {frag_id}: {e}")
-        return False
-
-
-async def process_all_fragments(
-    csv_path: str,
-    output_base_dir: str
-):
-    """Main processing pipeline."""
+async def generate_tags_phase(csv_path: str, output_file: str = "tags-review.json"):
+    """Phase 1: Generate tags and save for manual review."""
 
     # Validate configuration
-    Config.validate()
+    Config.validate('tags')
+
+    # Initialize OpenRouter client
+    logger.info("Initializing OpenRouter client...")
+    openrouter_client = AsyncOpenAI(
+        base_url="https://openrouter.ai/api/v1",
+        api_key=Config.OPENROUTER_API_KEY
+    )
+
+    # Parse CSV
+    logger.info("\n" + "="*60)
+    logger.info("PHASE 1: GENERATING TAGS")
+    logger.info("="*60)
+    fragments = parse_csv(csv_path)
+
+    # Generate tags for each fragment
+    for i, fragment in enumerate(fragments, 1):
+        logger.info(f"\n[{i}/{len(fragments)}] Generating tags for {fragment['id']}...")
+        logger.info(f"  Text: {fragment['text'][:60]}...")
+
+        # Generate tags
+        tags = await generate_tags_openrouter(
+            fragment['text'],
+            fragment['context'],
+            openrouter_client
+        )
+        fragment['tags'] = tags
+        logger.info(f"  Tags: {', '.join(tags)}")
+
+        # Rate limiting
+        await asyncio.sleep(0.5)
+
+    # Save to JSON for review
+    output_path = Path(output_file)
+    with open(output_path, 'w', encoding='utf-8') as f:
+        json.dump(fragments, f, indent=2, ensure_ascii=False)
+
+    logger.info("\n" + "="*60)
+    logger.info("TAGS GENERATED - READY FOR REVIEW")
+    logger.info("="*60)
+    logger.info(f"Tags saved to: {output_path}")
+    logger.info("\nNext steps:")
+    logger.info(f"1. Review and edit tags in: {output_file}")
+    logger.info("2. Confirm/delete/amend tags as needed")
+    logger.info(f"3. Run: python import_fragments.py --complete-import {csv_path}")
+    logger.info("\nTag file format:")
+    logger.info("  - Edit the 'tags' array for each fragment")
+    logger.info("  - Add/remove/modify tags as needed")
+    logger.info("  - Save the file when done")
+
+
+# ============================================
+# PHASE 2: COMPLETE IMPORT
+# ============================================
+
+async def complete_import_phase(
+    csv_path: str,
+    tags_file: str = "tags-review.json",
+    output_base_dir: str = "lyrics-vault"
+):
+    """Phase 2: Complete import using reviewed tags."""
+
+    # Validate configuration
+    Config.validate('complete')
+
+    # Check if tags file exists
+    tags_path = Path(tags_file)
+    if not tags_path.exists():
+        logger.error(f"Tags file not found: {tags_file}")
+        logger.error("Run Phase 1 first: python import_fragments.py --generate-tags")
+        sys.exit(1)
+
+    # Load reviewed tags
+    logger.info(f"Loading reviewed tags from {tags_file}...")
+    with open(tags_path, 'r', encoding='utf-8') as f:
+        fragments = json.load(f)
+
+    logger.info(f"Loaded {len(fragments)} fragments with reviewed tags")
 
     # Initialize clients
-    logger.info("Initializing API clients...")
+    logger.info("Initializing clients...")
 
-    anthropic_client = anthropic.Anthropic(api_key=Config.ANTHROPIC_API_KEY)
-    openai_client = AsyncOpenAI(api_key=Config.OPENAI_API_KEY)
+    openrouter_client = AsyncOpenAI(
+        base_url="https://openrouter.ai/api/v1",
+        api_key=Config.OPENROUTER_API_KEY
+    )
     vector_index = UpstashIndex(
         url=Config.UPSTASH_VECTOR_URL,
         token=Config.UPSTASH_VECTOR_TOKEN
@@ -541,12 +562,6 @@ async def process_all_fragments(
     db_conn = await asyncpg.connect(Config.DATABASE_URL)
 
     try:
-        # Parse CSV
-        logger.info("\n" + "="*60)
-        logger.info("PARSING CSV")
-        logger.info("="*60)
-        fragments = parse_csv(csv_path)
-
         # Create output directory
         output_dir = Path(output_base_dir) / "fragments"
         output_dir.mkdir(parents=True, exist_ok=True)
@@ -554,27 +569,54 @@ async def process_all_fragments(
 
         # Process each fragment
         logger.info("\n" + "="*60)
-        logger.info("PROCESSING FRAGMENTS")
+        logger.info("PHASE 2: COMPLETING IMPORT")
         logger.info("="*60)
 
         success_count = 0
         fail_count = 0
 
         for i, fragment in enumerate(fragments, 1):
-            success = await process_fragment(
-                fragment,
-                anthropic_client,
-                openai_client,
-                db_conn,
-                vector_index,
-                output_dir,
-                i,
-                len(fragments)
-            )
+            logger.info(f"\n[{i}/{len(fragments)}] Processing {fragment['id']}...")
 
-            if success:
+            try:
+                # Display reviewed tags
+                logger.info(f"  Tags: {', '.join(fragment['tags'])}")
+
+                # Analyze prosody if rhythmic
+                if fragment['rhythmic']:
+                    logger.info(f"  → Analyzing prosody...")
+                    prosody_data = analyze_fragment_prosody(fragment['text'])
+                    fragment['prosody_data'] = prosody_data
+                    logger.info(f"    Type: {prosody_data['fragment_type']}, Lines: {prosody_data['lines']}")
+
+                # Generate embedding
+                logger.info(f"  → Generating embedding...")
+                embedding = await generate_embedding_openrouter(
+                    fragment['text'],
+                    fragment['context'],
+                    openrouter_client
+                )
+                fragment['embedding'] = embedding
+                logger.info(f"    Embedding: {len(embedding)} dimensions")
+
+                # Save to vector store
+                logger.info(f"  → Saving to vector store...")
+                embedding_id = await save_to_vector_store(fragment, vector_index)
+                fragment['embedding_id'] = embedding_id
+
+                # Save to database
+                logger.info(f"  → Saving to database...")
+                await save_to_database(fragment, db_conn)
+
+                # Create markdown file
+                logger.info(f"  → Creating markdown file...")
+                file_path = create_fragment_markdown(fragment, output_dir)
+
+                logger.info(f"  ✓ Complete: {file_path.name}")
                 success_count += 1
-            else:
+
+            except Exception as e:
+                logger.error(f"  ✗ Failed: {e}")
                 fail_count += 1
 
             # Rate limiting
@@ -606,29 +648,66 @@ async def process_all_fragments(
 def main():
     """CLI entry point."""
 
-    if len(sys.argv) != 2:
-        print("Usage: python import_fragments.py <csv_file>")
-        print("Example: python import_fragments.py fragment-corpus-cleaned.csv")
+    if len(sys.argv) < 2:
+        print("Usage:")
+        print("  Phase 1 - Generate tags:")
+        print("    python import_fragments.py --generate-tags <csv_file>")
+        print("")
+        print("  Phase 2 - Complete import:")
+        print("    python import_fragments.py --complete-import <csv_file>")
+        print("")
+        print("Example workflow:")
+        print("  python import_fragments.py --generate-tags fragment-corpus-cleaned.csv")
+        print("  # Review and edit tags-review.json")
+        print("  python import_fragments.py --complete-import fragment-corpus-cleaned.csv")
         sys.exit(1)
 
-    csv_path = sys.argv[1]
+    mode = sys.argv[1]
 
-    if not os.path.exists(csv_path):
-        logger.error(f"File not found: {csv_path}")
+    if mode == '--generate-tags':
+        if len(sys.argv) != 3:
+            print("Usage: python import_fragments.py --generate-tags <csv_file>")
+            sys.exit(1)
+
+        csv_path = sys.argv[2]
+
+        if not os.path.exists(csv_path):
+            logger.error(f"File not found: {csv_path}")
+            sys.exit(1)
+
+        logger.info("="*60)
+        logger.info("LYBRARIAN FRAGMENT IMPORT - PHASE 1")
+        logger.info("="*60)
+        logger.info(f"CSV: {csv_path}")
+        logger.info(f"Output: tags-review.json")
+        logger.info("="*60 + "\n")
+
+        asyncio.run(generate_tags_phase(csv_path))
+
+    elif mode == '--complete-import':
+        if len(sys.argv) != 3:
+            print("Usage: python import_fragments.py --complete-import <csv_file>")
+            sys.exit(1)
+
+        csv_path = sys.argv[2]
+
+        if not os.path.exists(csv_path):
+            logger.error(f"File not found: {csv_path}")
+            sys.exit(1)
+
+        logger.info("="*60)
+        logger.info("LYBRARIAN FRAGMENT IMPORT - PHASE 2")
+        logger.info("="*60)
+        logger.info(f"Tags: tags-review.json")
+        logger.info(f"Output: lyrics-vault/fragments/")
+        logger.info("="*60 + "\n")
+
+        asyncio.run(complete_import_phase(csv_path))
+
+    else:
+        logger.error(f"Unknown mode: {mode}")
+        logger.error("Use --generate-tags or --complete-import")
         sys.exit(1)
-
-    # Default output to lyrics-vault directory
-    output_dir = "lyrics-vault"
-
-    logger.info("="*60)
-    logger.info("LYBRARIAN FRAGMENT IMPORT")
-    logger.info("="*60)
-    logger.info(f"CSV: {csv_path}")
-    logger.info(f"Output: {output_dir}/fragments/")
-    logger.info("="*60 + "\n")
-
-    # Run async pipeline
-    asyncio.run(process_all_fragments(csv_path, output_dir))
 
 
 if __name__ == "__main__":

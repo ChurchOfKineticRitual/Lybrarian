@@ -1,9 +1,8 @@
 # Lybrarian Fragment Import Script Dependencies
 # Python 3.9+
 
-# AI/ML APIs
-anthropic>=0.39.0
-openai>=1.54.0
+# AI/ML APIs (via OpenRouter)
+openai>=1.54.0  # OpenAI client works with OpenRouter
 
 # Database
 asyncpg>=0.29.0

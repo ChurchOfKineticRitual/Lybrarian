@@ -29,8 +29,7 @@ cp ../.env.example ../.env
 ```
 
 Required services:
-- **Anthropic API**: For tag generation (https://console.anthropic.com/)
-- **OpenAI API**: For embeddings (https://platform.openai.com/)
+- **OpenRouter**: Unified API for Claude + OpenAI (https://openrouter.ai/)
 - **Neon Database**: For Postgres storage (https://console.neon.tech/)
 - **Upstash Vector**: For semantic search (https://console.upstash.com/)
 
@@ -54,28 +53,67 @@ psql $DATABASE_URL < ../database-schema.sql
 
 ## Fragment Import
 
-### Usage
+### Two-Phase Workflow
 
-Import all fragments from CSV:
+The import script uses a two-phase workflow that allows you to review and edit AI-generated tags before finalizing the import.
+
+#### Phase 1: Generate Tags
+
+Generate tags for all fragments and save to a review file:
 
 ```bash
-python import_fragments.py ../fragment-corpus-cleaned.csv
+python import_fragments.py --generate-tags ../fragment-corpus-cleaned.csv
 ```
+
+This creates `tags-review.json` with AI-generated tags for each fragment.
+
+#### Phase 2: Review & Edit Tags
+
+Open `tags-review.json` and review the generated tags:
+
+```json
+{
+  "id": "frag0001",
+  "text": "An agent of biology,\nAcknowledging this honestly.",
+  "tags": ["biology", "honesty", "philosophical", "abstract"],
+  ...
+}
+```
+
+**Edit the tags as needed:**
+- Add new tags: `"tags": ["biology", "honesty", "philosophical", "abstract", "science"]`
+- Remove tags: Delete unwanted tags from the array
+- Modify tags: Change tag names to better fit your taxonomy
+
+Save the file when done.
+
+#### Phase 3: Complete Import
+
+Run the complete import with your reviewed tags:
+
+```bash
+python import_fragments.py --complete-import ../fragment-corpus-cleaned.csv
+```
+
+This processes each fragment through the full pipeline using your curated tags.
 
 ### What It Does
 
-The script processes each fragment through the following pipeline:
-
+**Phase 1 - Tag Generation:**
 1. **Parse CSV** - Read fragment data (ID, text, attribution, rhythmic flag, context)
-2. **Generate Tags** - Use Claude API to generate 3-7 semantic tags
-3. **Analyze Prosody** (rhythmic fragments only) - Extract:
+2. **Generate Tags** - Use Claude (via OpenRouter) to generate 3-7 semantic tags
+3. **Save for Review** - Export to `tags-review.json` for manual editing
+
+**Phase 2 - Complete Import:**
+1. **Load Reviewed Tags** - Read edited tags from `tags-review.json`
+2. **Analyze Prosody** (rhythmic fragments only) - Extract:
    - Syllable count per line
    - Stress pattern (binary string like "10101010")
    - End rhyme sound (IPA phonetics)
-4. **Generate Embeddings** - Create 1536-dimensional vectors using OpenAI
-5. **Save to Vector Store** - Store embeddings in Upstash for semantic search
-6. **Save to Database** - Store metadata and prosody in Neon Postgres
-7. **Create Markdown Files** - Generate Obsidian-compatible vault files
+3. **Generate Embeddings** - Create 1536-dimensional vectors using OpenAI (via OpenRouter)
+4. **Save to Vector Store** - Store embeddings in Upstash for semantic search
+5. **Save to Database** - Store metadata and prosody in Neon Postgres
+6. **Create Markdown Files** - Generate Obsidian-compatible vault files
 
 ### Output
 
@@ -87,24 +125,58 @@ The script creates:
 
 ### Example Output
 
+**Phase 1 - Generate Tags:**
+
 ```
 ============================================================
-LYBRARIAN FRAGMENT IMPORT
+LYBRARIAN FRAGMENT IMPORT - PHASE 1
 ============================================================
 CSV: ../fragment-corpus-cleaned.csv
+Output: tags-review.json
+============================================================
+
+PHASE 1: GENERATING TAGS
+============================================================
+
+[1/65] Generating tags for frag0001...
+  Text: An agent of biology,
+Acknowledging this honestly....
+  Tags: biology, honesty, philosophical, abstract, science
+
+[2/65] Generating tags for frag0002...
+...
+
+============================================================
+TAGS GENERATED - READY FOR REVIEW
+============================================================
+Tags saved to: tags-review.json
+
+Next steps:
+1. Review and edit tags in: tags-review.json
+2. Confirm/delete/amend tags as needed
+3. Run: python import_fragments.py --complete-import ../fragment-corpus-cleaned.csv
+
+Tag file format:
+  - Edit the 'tags' array for each fragment
+  - Add/remove/modify tags as needed
+  - Save the file when done
+```
+
+**Phase 2 - Complete Import:**
+
+```
+============================================================
+LYBRARIAN FRAGMENT IMPORT - PHASE 2
+============================================================
+Tags: tags-review.json
 Output: lyrics-vault/fragments/
 ============================================================
 
-Parsing CSV...
-Parsed 65 fragments from CSV
-
-============================================================
-PROCESSING FRAGMENTS
+PHASE 2: COMPLETING IMPORT
 ============================================================
 
 [1/65] Processing frag0001...
-  → Generating tags...
-    Tags: biology, honesty, philosophical, abstract, science
+  Tags: biology, honesty, philosophical, abstract, science
   → Analyzing prosody...
     Type: couplet, Lines: 2
   → Generating embedding...
@@ -187,8 +259,13 @@ cat lyrics-vault/fragments/frag0001.md  # View sample
 
 ### "Missing required environment variables"
 - Check that `.env` file exists in project root
-- Verify all required variables are set
+- Verify `OPENROUTER_API_KEY` is set (replaces separate Anthropic/OpenAI keys)
+- Get your key from https://openrouter.ai/keys
 - Load with `source .env` if needed
+
+### "Tags file not found"
+- You must run Phase 1 (`--generate-tags`) before Phase 2 (`--complete-import`)
+- Check that `tags-review.json` exists in the current directory
 
 ### "Failed to connect to database"
 - Verify `DATABASE_URL` is correct
@@ -210,11 +287,17 @@ cat lyrics-vault/fragments/frag0001.md  # View sample
 
 ## Performance
 
-- **Tag generation**: ~2s per fragment (Claude API)
+**Phase 1 (Tag Generation):**
+- **Tag generation**: ~2s per fragment (Claude via OpenRouter)
+- **Total time**: ~2-3 minutes for 65 fragments
+
+**Phase 2 (Complete Import):**
 - **Prosodic analysis**: ~0.5s per fragment (local)
-- **Embedding generation**: ~1s per fragment (OpenAI API)
+- **Embedding generation**: ~1s per fragment (OpenAI via OpenRouter)
 - **Database save**: ~0.1s per fragment
-- **Total time**: ~4-5 minutes for 65 fragments
+- **Total time**: ~2-3 minutes for 65 fragments
+
+**Total workflow time**: ~5-6 minutes (plus manual tag review time)
 
 ## Next Steps
 
