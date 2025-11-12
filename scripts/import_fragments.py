@@ -169,8 +169,10 @@ Example output: urban, nocturnal, melancholic, walking, rain"""
 
 
 # ============================================
-# PROSODIC ANALYSIS
+# PROSODIC ANALYSIS (British English)
 # ============================================
+# Pronunciation: British English phonetics with American CMUdict fallback
+# Key differences: TRAP-BATH split, rhoticity, LOT-CLOTH merger
 
 def _ensure_prosody_imports():
     """Lazy import of prosody libraries."""
@@ -254,45 +256,93 @@ def get_stress_pattern(text: str) -> str:
     return pattern if pattern else "1"
 
 
-def get_end_rhyme_sound(text: str) -> Optional[str]:
-    """Get phonetic end rhyme sound using pronouncing library."""
-    try:
-        import pronouncing
-    except ImportError:
-        logger.warning("pronouncing library not available, skipping rhyme analysis")
-        return None
-
+def get_dual_rhyme_sounds(text: str) -> Dict[str, Optional[str]]:
+    """Get both American and British phonetic rhyme sounds."""
     words = text.lower().split()
     if not words:
-        return None
-
-    # Get last word
+        return {"us": None, "gb": None}
+    
     last_word = ''.join(c for c in words[-1] if c.isalpha())
-
-    # Get phonetic representation
-    phones = pronouncing.phones_for_word(last_word)
-    if phones:
-        try:
-            import pronouncing
-            # Get primary pronunciation
-            phone = phones[0]
-            # Extract rhyme part (from last stressed vowel to end)
+    
+    # Initialize results
+    us_rhyme = None
+    gb_rhyme = None
+    
+    # Get American pronunciation (CMUdict via pronouncing)
+    try:
+        import pronouncing
+        phones = pronouncing.phones_for_word(last_word)
+        if phones:
+            phone = phones[0]  # Primary pronunciation
             rhyme_part = pronouncing.rhyming_part(phone)
-            return rhyme_part if rhyme_part else phone
-        except:
-            return None
+            us_rhyme = rhyme_part if rhyme_part else phone
+    except Exception as e:
+        logger.debug(f"American phonemization failed for '{last_word}': {e}")
+    
+    # Get British pronunciation - try phonemizer first, then conversion
+    try:
+        from phonemizer import phonemize
+        british_phones = phonemize(last_word, language='en-gb', backend='espeak', strip=True)
+        if british_phones and british_phones != last_word:
+            gb_rhyme = british_phones
+    except Exception as e:
+        logger.debug(f"British phonemizer failed for '{last_word}': {e}")
+        # Fallback: convert American to British
+        if us_rhyme:
+            gb_rhyme = _convert_american_to_british_phonemes(us_rhyme)
+    
+    return {"us": us_rhyme, "gb": gb_rhyme}
 
-    return None
+
+def get_end_rhyme_sound(text: str, use_british: bool = True) -> Optional[str]:
+    """Legacy function - get single rhyme sound (for backward compatibility)."""
+    dual_rhymes = get_dual_rhyme_sounds(text)
+    return dual_rhymes["gb"] if use_british else dual_rhymes["us"]
+
+
+def _convert_american_to_british_phonemes(american_phones: str) -> str:
+    """Convert American CMUdict phonemes to British equivalents."""
+    # Key American vs British phoneme differences
+    british_mappings = {
+        # TRAP-BATH split: /æ/ -> /ɑː/ in British for words like "dance", "bath"
+        'AE1': 'AA1',  # dance, bath, laugh 
+        'AE0': 'AA0',
+        
+        # LOT-CLOTH: American /ɑ/ -> British /ɒ/
+        'AA1': 'AO1',  # lot, cloth (different from BATH words)
+        'AA0': 'AO0',
+        
+        # Rhoticity: Remove /r/ before consonants and at end
+        'ER1': 'AH1',  # "bird" /bɜːd/ -> /bɜːd/ (keep the vowel)
+        'ER0': 'AH0',
+        'R': '',       # Remove non-syllabic /r/
+        
+        # THOUGHT-FORCE: Merge in British
+        'AO1': 'AO1',  # Keep as is
+        'AO0': 'AO0',
+    }
+    
+    # Apply simple mappings
+    result = american_phones
+    for american, british in british_mappings.items():
+        result = result.replace(american, british)
+    
+    return result
 
 
 def analyze_line_prosody(line_text: str) -> Dict:
     """Analyze syllables, stress, and rhyme for a single line."""
-
+    
+    # Get dual pronunciations
+    dual_rhymes = get_dual_rhyme_sounds(line_text)
+    
     return {
         'text': line_text,
         'syllables': count_syllables(line_text),
         'stress': get_stress_pattern(line_text),
-        'end_rhyme': get_end_rhyme_sound(line_text)
+        'end_rhyme': dual_rhymes["gb"],  # Keep legacy field for backward compatibility
+        'end_rhyme_us': dual_rhymes["us"], 
+        'end_rhyme_gb': dual_rhymes["gb"]
     }
 
 
@@ -429,15 +479,17 @@ async def save_to_database(fragment_data: Dict, db_conn):
                 await db_conn.execute("""
                     INSERT INTO fragment_lines (
                         fragment_id, line_number, text, syllables,
-                        stress_pattern, end_rhyme_sound
-                    ) VALUES ($1, $2, $3, $4, $5, $6)
+                        stress_pattern, end_rhyme_sound, end_rhyme_us, end_rhyme_gb
+                    ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
                 """,
                     fragment_data['id'],
                     line_data['line'],
                     line_data['text'],
                     line_data['syllables'],
                     line_data['stress'],
-                    line_data['end_rhyme']
+                    line_data['end_rhyme'],      # Legacy field
+                    line_data['end_rhyme_us'],   # American pronunciation
+                    line_data['end_rhyme_gb']    # British pronunciation
                 )
 
         logger.debug(f"Saved {fragment_data['id']} to database")
