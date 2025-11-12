@@ -31,8 +31,8 @@ from typing import Dict, List, Optional
 from openai import AsyncOpenAI
 from dotenv import load_dotenv
 
-# Load environment variables from .env file
-load_dotenv()
+# Load environment variables from .env file in project root
+load_dotenv(Path(__file__).parent.parent / '.env')
 
 # Phase-specific imports (loaded conditionally)
 # asyncpg, upstash_vector, syllables, pronouncing, nltk - imported when needed
