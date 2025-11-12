@@ -1,8 +1,8 @@
 # Lybrarian - Development Progress
 
-**Last Updated:** November 11, 2025
+**Last Updated:** November 12, 2025
 **Live Site:** Check your Netlify dashboard for URL
-**Current Branch:** `main` (merged from `claude/init-project-011CV2ETVhaNrGUKLLwyo5eJ`)
+**Current Branch:** `claude/fragment-import-script-011CV41McoYAE6gUq7KqPtUZ`
 
 ---
 
@@ -34,28 +34,64 @@
 
 ---
 
-## 🎯 Next Steps - Phase 1b: Fragment Import
+## ✅ Completed (Phase 1b - Fragment Import Script)
 
-### High Priority (Do This First)
-1. **Create Python import script** (`scripts/import_fragments.py`)
-   - Parse `fragment-corpus-cleaned.csv`
-   - Generate tags using Claude API
-   - Analyze prosody (syllables, stress, rhyme) for rhythmic fragments
-   - Create embeddings using OpenAI API
-   - Save to database, vector store, and markdown vault
+### Python Import Script
+- [x] Created `scripts/import_fragments.py` - Complete fragment processing pipeline
+- [x] CSV parsing with proper encoding and multi-line handling
+- [x] Tag generation using Claude Sonnet 4.5 API
+- [x] Prosodic analysis (syllables, stress patterns, rhyme sounds)
+- [x] Embedding generation using OpenAI text-embedding-3-small
+- [x] Database integration (Neon Postgres)
+- [x] Vector store integration (Upstash Vector)
+- [x] Markdown file generation (Obsidian-compatible)
+- [x] Error handling and logging
+- [x] Rate limiting for API calls
 
-2. **Set up infrastructure services**
-   - Create Neon database (serverless Postgres)
-   - Run `database-schema.sql` to create tables
-   - Create Upstash Vector index (1536 dimensions for OpenAI embeddings)
-   - Create GitHub repo for lyrics vault
-   - Add all API keys to Netlify environment variables
+### Dependencies & Configuration
+- [x] `scripts/requirements.txt` - All Python dependencies listed
+- [x] `.env.example` - Environment variable template
+- [x] `scripts/README.md` - Comprehensive usage documentation
+- [x] Updated `.gitignore` - Exclude `.env`, `lyrics-vault/`, `nltk_data/`
 
-3. **Verify fragment import**
-   - Confirm all 65 fragments imported
-   - Test database queries
-   - Verify vector search works
-   - Check markdown files in vault
+### Features Implemented
+- **Tag Generation**: Claude API generates 3-7 semantic tags per fragment
+- **Prosodic Analysis**: CMUdict-based syllable counting, stress patterns, IPA rhyme sounds
+- **Dual Storage**: Metadata in Postgres + vectors in Upstash
+- **Markdown Vault**: YAML frontmatter with full metadata
+- **Fragment Types**: Auto-classification (single-line, couplet, quatrain, verse, stanza)
+- **Async Pipeline**: Concurrent processing for performance
+
+---
+
+## 🎯 Next Steps - Phase 1b: Infrastructure Setup
+
+### Ready to Run Import (Blocked by Infrastructure)
+The import script is complete and ready to use. Before running it, you need to:
+
+1. **Set up infrastructure services**
+   - [ ] Create Neon database (serverless Postgres) at https://console.neon.tech/
+   - [ ] Run `database-schema.sql` to create tables
+   - [ ] Create Upstash Vector index (1536 dimensions) at https://console.upstash.com/
+   - [ ] Optional: Create GitHub repo for lyrics vault
+   - [ ] Copy `.env.example` to `.env` and fill in API keys
+
+2. **Install Python dependencies**
+   ```bash
+   cd scripts
+   pip install -r requirements.txt
+   ```
+
+3. **Run the import**
+   ```bash
+   python import_fragments.py ../fragment-corpus-cleaned.csv
+   ```
+
+4. **Verify fragment import**
+   - [ ] Confirm all 65 fragments imported
+   - [ ] Test database queries
+   - [ ] Verify vector search works
+   - [ ] Check markdown files in vault
 
 ---
 
@@ -98,10 +134,14 @@ Lybrarian/
 │   └── package.json             # ✅
 ├── netlify/
 │   └── functions/               # Health check ✅ (generate.js pending)
-├── scripts/                     # Empty (import script needed)
+├── scripts/                     # ✅ Import script complete
+│   ├── import_fragments.py      # ✅ Main import pipeline
+│   ├── requirements.txt         # ✅ Python dependencies
+│   └── README.md                # ✅ Usage documentation
 ├── netlify.toml                 # ✅
 ├── database-schema.sql          # ✅ (ready to run)
 ├── fragment-corpus-cleaned.csv  # ✅ (ready to import)
+├── .env.example                 # ✅ Environment variable template
 ├── CLAUDE.md                    # ✅
 └── [documentation files]        # ✅
 ```

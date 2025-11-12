@@ -1,0 +1,23 @@
+# Lybrarian Fragment Import Script Dependencies
+# Python 3.9+
+
+# AI/ML APIs
+anthropic>=0.39.0
+openai>=1.54.0
+
+# Database
+asyncpg>=0.29.0
+
+# Vector store
+upstash-vector>=0.4.0
+
+# Prosodic analysis
+syllables>=1.0.7
+pronouncing>=0.2.0
+nltk>=3.9.1
+
+# Data processing
+pyyaml>=6.0.1
+
+# Utilities
+python-dotenv>=1.0.0

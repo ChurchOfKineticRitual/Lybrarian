@@ -43,3 +43,7 @@ __pycache__/
 venv/
 env/
 ENV/
+nltk_data/
+
+# Generated data
+lyrics-vault/
