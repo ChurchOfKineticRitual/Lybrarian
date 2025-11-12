@@ -27,14 +27,11 @@ from datetime import datetime
 from pathlib import Path
 from typing import Dict, List, Optional
 
-# Third-party imports
-import asyncpg
-import syllables
-import pronouncing
-import nltk
-from nltk.corpus import cmudict
+# Core imports (always needed)
 from openai import AsyncOpenAI
-from upstash_vector import Index as UpstashIndex
+
+# Phase-specific imports (loaded conditionally)
+# asyncpg, upstash_vector, syllables, pronouncing, nltk - imported when needed
 
 # Setup logging
 logging.basicConfig(
@@ -43,20 +40,8 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# Download NLTK data if not present
-try:
-    nltk.data.find('corpora/cmudict')
-except LookupError:
-    logger.info("Downloading CMUdict...")
-    nltk.download('cmudict', quiet=True)
-
-# Load CMUdict
-try:
-    CMU_DICT = cmudict.dict()
-except:
-    logger.error("Failed to load CMUdict. Installing...")
-    nltk.download('cmudict', quiet=True)
-    CMU_DICT = cmudict.dict()
+# CMUdict will be loaded when needed
+CMU_DICT = None
 
 
 # ============================================
@@ -183,8 +168,34 @@ Example output: urban, nocturnal, melancholic, walking, rain"""
 # PROSODIC ANALYSIS
 # ============================================
 
+def _ensure_prosody_imports():
+    """Lazy import of prosody libraries."""
+    global CMU_DICT
+
+    if CMU_DICT is not None:
+        return
+
+    try:
+        import nltk
+        from nltk.corpus import cmudict
+
+        # Download NLTK data if not present
+        try:
+            nltk.data.find('corpora/cmudict')
+        except LookupError:
+            logger.info("Downloading CMUdict...")
+            nltk.download('cmudict', quiet=True)
+
+        CMU_DICT = cmudict.dict()
+    except Exception as e:
+        logger.error(f"Failed to load prosody libraries: {e}")
+        CMU_DICT = {}
+
+
 def count_syllables(text: str) -> int:
     """Count syllables in text."""
+    import syllables
+
     words = text.lower().split()
     total = 0
 
@@ -204,6 +215,9 @@ def count_syllables(text: str) -> int:
 
 def get_stress_pattern(text: str) -> str:
     """Get binary stress pattern using CMUdict."""
+    import syllables
+    _ensure_prosody_imports()
+
     words = text.lower().split()
     pattern = ""
 
@@ -238,6 +252,12 @@ def get_stress_pattern(text: str) -> str:
 
 def get_end_rhyme_sound(text: str) -> Optional[str]:
     """Get phonetic end rhyme sound using pronouncing library."""
+    try:
+        import pronouncing
+    except ImportError:
+        logger.warning("pronouncing library not available, skipping rhyme analysis")
+        return None
+
     words = text.lower().split()
     if not words:
         return None
@@ -248,11 +268,15 @@ def get_end_rhyme_sound(text: str) -> Optional[str]:
     # Get phonetic representation
     phones = pronouncing.phones_for_word(last_word)
     if phones:
-        # Get primary pronunciation
-        phone = phones[0]
-        # Extract rhyme part (from last stressed vowel to end)
-        rhyme_part = pronouncing.rhyming_part(phone)
-        return rhyme_part if rhyme_part else phone
+        try:
+            import pronouncing
+            # Get primary pronunciation
+            phone = phones[0]
+            # Extract rhyme part (from last stressed vowel to end)
+            rhyme_part = pronouncing.rhyming_part(phone)
+            return rhyme_part if rhyme_part else phone
+        except:
+            return None
 
     return None
 
@@ -373,6 +397,7 @@ def create_fragment_markdown(fragment_data: Dict, output_dir: Path) -> Path:
 
 async def save_to_database(fragment_data: Dict, db_conn):
     """Save fragment to Postgres database."""
+    import asyncpg
 
     try:
         # Insert into fragments table
@@ -422,8 +447,9 @@ async def save_to_database(fragment_data: Dict, db_conn):
 # VECTOR STORE OPERATIONS
 # ============================================
 
-async def save_to_vector_store(fragment_data: Dict, vector_index: UpstashIndex) -> str:
+async def save_to_vector_store(fragment_data: Dict, vector_index) -> str:
     """Save embedding to Upstash Vector."""
+    from upstash_vector import Index as UpstashIndex
 
     try:
         # Prepare metadata
@@ -527,6 +553,9 @@ async def complete_import_phase(
     output_base_dir: str = "lyrics-vault"
 ):
     """Phase 2: Complete import using reviewed tags."""
+    # Import Phase 2 dependencies
+    import asyncpg
+    from upstash_vector import Index as UpstashIndex
 
     # Validate configuration
     Config.validate('complete')
