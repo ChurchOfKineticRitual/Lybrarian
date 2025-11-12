@@ -29,6 +29,10 @@ from typing import Dict, List, Optional
 
 # Core imports (always needed)
 from openai import AsyncOpenAI
+from dotenv import load_dotenv
+
+# Load environment variables from .env file
+load_dotenv()
 
 # Phase-specific imports (loaded conditionally)
 # asyncpg, upstash_vector, syllables, pronouncing, nltk - imported when needed
